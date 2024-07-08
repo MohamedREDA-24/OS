@@ -1,0 +1,62 @@
+		uint32 vict_va;
+		int vict_check=0; // false
+		for(uint32 i=0;i<maxSize;i++) // working set entries
+		{
+			uint32 va =curenv->ptr_pageWorkingSet[curenv->page_last_WS_index].virtual_address ;
+			uint32 entry_permissions=pt_get_page_permissions(curenv,va);
+			if(((entry_permissions & PERM_USED) != PERM_USED)&&((entry_permissions & PERM_MODIFIED) != PERM_MODIFIED))
+			{
+				vict_check=1; // true
+				vict_va=va;
+				env_page_ws_clear_entry(curenv, curenv->page_last_WS_index);
+				break;
+			}
+			else
+			{
+				curenv->page_last_WS_index++;
+				curenv->page_last_WS_index = curenv->page_last_WS_index %  curenv->page_WS_max_size ;
+			}
+
+		}
+		if(vict_check==0)
+		{
+			for(uint32 i=0;i<maxSize;i++)
+			{
+				uint32 va =curenv->ptr_pageWorkingSet[curenv->page_last_WS_index].virtual_address ;
+				uint32 entry_permissions=pt_get_page_permissions(curenv,va);
+				if((entry_permissions & PERM_USED) != PERM_USED)
+				{
+					vict_va=va;
+					vict_check=1; // true
+					env_page_ws_clear_entry(curenv, curenv->page_last_WS_index);
+					break;
+				}
+				else
+				{
+				    pt_set_page_permissions(curenv, va, 0, PERM_USED);
+					curenv->page_last_WS_index++;
+					curenv->page_last_WS_index = curenv->page_last_WS_index %  curenv->page_WS_max_size ;
+				}
+			}
+
+		}
+		if(vict_check==0)
+		{
+			for(uint32 i=0;i<maxSize;i++)
+			{
+				uint32 va =curenv->ptr_pageWorkingSet[curenv->page_last_WS_index].virtual_address ;
+				uint32 entry_permissions=pt_get_page_permissions(curenv,va);
+				if(((entry_permissions & PERM_USED) != PERM_USED)&&((entry_permissions & PERM_MODIFIED) != PERM_MODIFIED))
+				{
+					vict_va=va;
+					env_page_ws_clear_entry(curenv, curenv->page_last_WS_index);
+					break;
+				}
+				else
+				{
+					curenv->page_last_WS_index++;
+					curenv->page_last_WS_index = curenv->page_last_WS_index %  curenv->page_WS_max_size ;
+				}
+			}
+
+		}

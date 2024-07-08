@@ -1,0 +1,233 @@
+void __page_fault_handler_with_buffering(struct Env * curenv, uint32 fault_va)
+{
+	//TODO: [PROJECT 2023 - MS2 - [3] Page Fault Handler: PLACEMENT & REPLACEMENT CASES]
+	// Write your code here, remove the panic and write your code
+	int maxSize = curenv->page_WS_max_size ;
+	int curSize = env_page_ws_get_size(curenv);
+	if(curSize<maxSize)
+	{
+		struct Frame_Info* ptr_frame_info = NULL;
+		uint32 *ptr_table = NULL;
+
+		uint32 page_permissions = pt_get_page_permissions(curenv, fault_va);
+	  if((page_permissions & PERM_BUFFERED) == PERM_BUFFERED)
+		{
+			pt_set_page_permissions(curenv, fault_va, PERM_PRESENT, PERM_BUFFERED);
+			ptr_frame_info = get_frame_info(curenv->env_page_directory, (void*)fault_va, &ptr_table);
+			ptr_frame_info->isBuffered=0;
+
+		    if((page_permissions & PERM_MODIFIED) == PERM_MODIFIED)
+			{
+				bufferlist_remove_page(&modified_frame_list,ptr_frame_info);
+
+			}
+			else
+			{
+				bufferlist_remove_page(&free_frame_list,ptr_frame_info);
+
+			}
+		}
+		else
+		{
+		   int ret1 = allocate_frame(&ptr_frame_info);
+		   if(ret1!= E_NO_MEM)
+			   {
+
+			   	   map_frame(curenv->env_page_directory, ptr_frame_info, (void *)fault_va,PERM_WRITEABLE|PERM_USER);
+				   int ret = pf_read_env_page(curenv,(void*) fault_va);
+				   if (ret == E_PAGE_NOT_EXIST_IN_PF)
+				   {
+						  if (fault_va < USTACKTOP && fault_va >= USTACKBOTTOM)
+						  {
+							  pf_add_empty_env_page(curenv,fault_va,0);
+						  }
+
+						  else
+						  {
+							   panic("ERROR: Invalid virtual address");
+
+						  }
+				   }
+			   }
+		   else
+		   {
+			   cprintf("Error: no physical memory available\n");
+		   }
+
+
+
+		}
+	  //////////////////////////////UPDATE WS/////////////////////
+		if(curenv->ptr_pageWorkingSet[curenv->page_last_WS_index].empty==1)
+		{
+			curenv->ptr_pageWorkingSet[curenv->page_last_WS_index].empty=0;
+			curenv->ptr_pageWorkingSet[curenv->page_last_WS_index].virtual_address = fault_va;
+			curenv->page_last_WS_index++;
+			curenv->page_last_WS_index = curenv->page_last_WS_index %  curenv->page_WS_max_size ;
+		}
+
+
+	}
+
+	else
+	{
+	//	env_page_ws_print(curenv);
+
+		uint32 vict_va;
+		int vict_check=0; // false
+		for(uint32 i=0;i<maxSize;i++) // working set entries
+		{
+			uint32 va =curenv->ptr_pageWorkingSet[curenv->page_last_WS_index].virtual_address ;
+			uint32 entry_permissions=pt_get_page_permissions(curenv,va);
+			if(((entry_permissions & PERM_USED) != PERM_USED)&&((entry_permissions & PERM_MODIFIED) != PERM_MODIFIED))
+			{
+				vict_check=1; // true
+				vict_va=va;
+				env_page_ws_clear_entry(curenv, curenv->page_last_WS_index);
+				break;
+			}
+			else
+			{
+				curenv->page_last_WS_index++;
+				curenv->page_last_WS_index = curenv->page_last_WS_index %  curenv->page_WS_max_size ;
+			}
+
+		}
+		if(vict_check==0)
+		{
+			for(uint32 i=0;i<maxSize;i++)
+			{
+				uint32 va =curenv->ptr_pageWorkingSet[curenv->page_last_WS_index].virtual_address ;
+				uint32 entry_permissions=pt_get_page_permissions(curenv,va);
+				if((entry_permissions & PERM_USED) != PERM_USED)
+				{
+					vict_va=va;
+					vict_check=1; // true
+					env_page_ws_clear_entry(curenv, curenv->page_last_WS_index);
+					break;
+				}
+				else
+				{
+				    pt_set_page_permissions(curenv, va, 0, PERM_USED);
+					curenv->page_last_WS_index++;
+					curenv->page_last_WS_index = curenv->page_last_WS_index %  curenv->page_WS_max_size ;
+				}
+			}
+
+		}
+		if(vict_check==0)
+		{
+			for(uint32 i=0;i<maxSize;i++)
+			{
+				uint32 va =curenv->ptr_pageWorkingSet[curenv->page_last_WS_index].virtual_address ;
+				uint32 entry_permissions=pt_get_page_permissions(curenv,va);
+				if(((entry_permissions & PERM_USED) != PERM_USED)&&((entry_permissions & PERM_MODIFIED) != PERM_MODIFIED))
+				{
+					vict_va=va;
+					env_page_ws_clear_entry(curenv, curenv->page_last_WS_index);
+					break;
+				}
+				else
+				{
+					curenv->page_last_WS_index++;
+					curenv->page_last_WS_index = curenv->page_last_WS_index %  curenv->page_WS_max_size ;
+				}
+			}
+
+		}
+//		env_page_ws_print(curenv);
+
+
+		struct Frame_Info* ptr_frame_info_vict = NULL;
+		uint32 *ptr_table_vict = NULL;
+		ptr_frame_info_vict = get_frame_info(curenv->env_page_directory, (void*)vict_va, &ptr_table_vict);
+		ptr_frame_info_vict->isBuffered=1;
+		pt_set_page_permissions(curenv, vict_va, PERM_BUFFERED, PERM_PRESENT);
+		ptr_frame_info_vict->environment=curenv;
+		ptr_frame_info_vict->va=vict_va;
+
+		uint32 vict_permissions=pt_get_page_permissions(curenv,vict_va);
+
+		if((vict_permissions & PERM_MODIFIED) != PERM_MODIFIED)
+		{
+			bufferList_add_page(&free_frame_list, ptr_frame_info_vict);
+		}
+		else
+		{
+			bufferList_add_page(&modified_frame_list, ptr_frame_info_vict);
+			uint32 size = LIST_SIZE(&modified_frame_list);
+			uint32 max_len = getModifiedBufferLength();
+			if(size>=max_len)
+			{
+				LIST_FOREACH(ptr_frame_info_vict, &modified_frame_list)
+				{
+					int ret = pf_update_env_page(curenv, (void*)vict_va, ptr_frame_info_vict);
+					pt_set_page_permissions(curenv, vict_va, 0, PERM_MODIFIED);
+					bufferList_add_page(&free_frame_list, ptr_frame_info_vict);
+				}
+
+			}
+
+		}
+
+		struct Frame_Info* ptr_frame_info = NULL;
+
+		uint32 page_permissions = pt_get_page_permissions(curenv, fault_va);
+	  if((page_permissions & PERM_BUFFERED) == PERM_BUFFERED)
+		{
+			pt_set_page_permissions(curenv, fault_va, PERM_PRESENT, PERM_BUFFERED);
+			uint32 *ptr_table = NULL;
+			ptr_frame_info = get_frame_info(curenv->env_page_directory, (void*)fault_va, &ptr_table);
+			ptr_frame_info->isBuffered=0;
+
+			if((page_permissions & PERM_MODIFIED) == PERM_MODIFIED)
+			{
+				bufferlist_remove_page(&modified_frame_list,ptr_frame_info);
+			}
+			else
+			{
+				bufferlist_remove_page(&free_frame_list,ptr_frame_info);
+			}
+		}
+		else
+		{
+		   int ret1 = allocate_frame(&ptr_frame_info);
+		   if(ret1!= E_NO_MEM)
+			   {
+				   map_frame(curenv->env_page_directory, ptr_frame_info, (void *)fault_va,PERM_WRITEABLE|PERM_USER);
+				   int ret = pf_read_env_page(curenv,(void*) fault_va);
+				   if (ret == E_PAGE_NOT_EXIST_IN_PF)
+				   {
+						  if (fault_va < USTACKTOP && fault_va >= USTACKBOTTOM)
+						  {
+							  pf_add_empty_env_page(curenv,fault_va,0);
+						  }
+
+						  else
+						  {
+							   panic("ERROR: Invalid virtual address");
+
+						  }
+				   }
+			   }
+		   else
+		   {
+			   cprintf("Error: no physical memory available\n");
+		   }
+
+
+
+		}
+		if(curenv->ptr_pageWorkingSet[curenv->page_last_WS_index].empty==1)
+		{
+			curenv->ptr_pageWorkingSet[curenv->page_last_WS_index].empty=0;
+			curenv->ptr_pageWorkingSet[curenv->page_last_WS_index].virtual_address = fault_va;
+			curenv->page_last_WS_index++;
+			curenv->page_last_WS_index = curenv->page_last_WS_index %  curenv->page_WS_max_size ;
+
+		}
+
+
+	}
+	//refer to the project documentation for the detailed steps of the page fault handler
+}

@@ -1,0 +1,157 @@
+void __env_free_with_buffering(struct Env *e)
+{
+	//TODO: [PROJECT 2023 - MS2 - [4] Bonus2] Exit [__env_free_with_buffering()]
+
+	__remove_pws_user_pages(e);
+
+	// [1] Un-buffer any BUFFERED page belong to this environment from the free/modified lists
+	int length = e->page_WS_max_size;
+
+	struct Frame_Info* ptr_frame_info = NULL;
+	uint32 *ptr_page_table = NULL;
+
+	for (int i = 0; i < length; i++)
+	{
+		uint32 va = env_page_ws_get_virtual_address(e, i);
+		uint32 permissions = pt_get_page_permissions(e, va);
+
+		if(permissions & PERM_BUFFERED)
+		{
+			if (permissions & PERM_MODIFIED)
+			{
+				ptr_frame_info = get_frame_info(e->env_page_directory,(void*) va, &ptr_page_table);
+				bufferlist_remove_page(&modified_frame_list, ptr_frame_info);
+				ptr_frame_info->isBuffered = 0;
+				free_frame(ptr_frame_info);
+				pt_clear_page_table_entry(e,va);
+				ptr_frame_info->environment = NULL;
+				pt_set_page_permissions(e, va, 0,PERM_MODIFIED);
+				pt_set_page_permissions(e, va, 0,PERM_BUFFERED);
+
+			}
+			else
+			{
+				bufferlist_remove_page(&free_frame_list, ptr_frame_info);
+				ptr_frame_info->isBuffered = 0;
+				ptr_frame_info->environment = NULL;
+				pt_set_page_permissions(e, va, 0,PERM_BUFFERED);
+				free_frame(ptr_frame_info);
+				pt_clear_page_table_entry(e,va);
+			}
+
+	}
+
+	// [2] Free the pages in the PAGE working set from the main memory
+		for (int i = 0; i < (e->page_WS_max_size); i++)
+		{
+			uint32 va = env_page_ws_get_virtual_address(e, i);
+			unmap_frame(e->env_page_directory, (void*) va);
+			env_page_ws_clear_entry(e, i);
+		}
+
+	// [4] Free all TABLES from the main memory
+
+		for (int i = 0; i < length; i++)
+		{
+			uint32 va = env_page_ws_get_virtual_address(e, i);
+
+			uint32 *page_table = NULL;
+
+			get_page_table(e->env_page_directory, (void*) va, &page_table);
+
+				int empty_entries = 0;
+
+				if (page_table != NULL)
+				{
+					for (int j = 0; j < 1024; j++)
+					{
+						if (page_table[j] == 0)
+						{
+							empty_entries++;
+						}
+						else if (page_table[j] != 0)
+						{
+							break;
+						}
+						if (empty_entries == 1024)
+						{
+							kfree((void*) page_table);
+						}
+					}
+
+			}
+
+		}
+	}
+		/*
+		for (int i = 0; i < length; i++)
+		{
+			kfree((void*)env_table_ws_get_virtual_address(e,i));
+		}
+	    */
+
+	// [5] Free the page DIRECTORY from the main memory
+
+	int dir_entries_counter=0;
+
+	for (int i = 0; i < length; i++)
+		{
+			uint32 va = env_page_ws_get_virtual_address(e, i);
+
+			pd_clear_page_dir_entry(e, va);
+
+			e->env_page_directory[PDX(va)] = 0;
+
+			dir_entries_counter++;
+
+			if(dir_entries_counter == length-1 )
+			{
+				kfree((void*)e->env_page_directory[PDX(va)] );
+			}
+
+		}
+
+	// [3] Free the PAGE working set itself from the main memory
+
+			int WS_pages_counter = 0;
+
+			//if all entries are empty the remove WS
+			for(int i = 0 ; i<length ; i++)
+			{
+				if((e->ptr_pageWorkingSet[i].virtual_address == 0)
+						&&(e->ptr_pageWorkingSet[i].empty == 1)
+						&&(e->ptr_pageWorkingSet[i].time_stamp == 0))
+				{
+					WS_pages_counter++;
+				}
+				if(WS_pages_counter == length-1)
+				{
+					if (e->ptr_pageWorkingSet != NULL)
+					{
+						kfree((void*) e->ptr_pageWorkingSet);
+						e->ptr_pageWorkingSet = NULL;
+						e->page_WS_max_size = 0;
+						e->page_last_WS_index = 0;
+					}
+				}
+
+			}
+
+
+	//DON'T CHANGE THESE LINES
+	// [6] Remove this program from the page file
+	pf_free_env(e);
+	/========================/
+
+	// [7] free the environment (return it back to the free environment list)
+	free_environment(e);
+	/========================/
+
+	//		// page file directory initialization
+	//		e->disk_env_pgdir= 0;
+	//		e->disk_env_pgdir_PA= 0;
+	//		e->disk_env_tabledir = 0;
+	//		e->disk_env_tabledir_PA = 0;
+
+
+}

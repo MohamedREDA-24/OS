@@ -1,0 +1,149 @@
+struct size_store{
+	uint32 adds;
+	uint32 size;
+};
+
+struct size_store stor[((USER_HEAP_MAX - USER_HEAP_START) / PAGE_SIZE)]={0};
+bool filled_spaces[((USER_HEAP_MAX-USER_HEAP_START))/PAGE_SIZE]={0};
+uint32 adds[((USER_HEAP_MAX-USER_HEAP_START))/PAGE_SIZE]={0};
+int sa=0;
+
+
+void* malloc(uint32 size)
+{
+	/*//TODO: [PROJECT 2023 - MS2 - [2] User Heap] malloc() [User Side]
+	// Write your code here, remove the panic and write your code
+	panic("malloc() is not implemented yet...!!");
+
+
+	// Steps:
+	//	1) Implement BEST FIT strategy to search the heap for suitable space
+	//		to the required allocation size (space should be on 4 KB BOUNDARY)
+	//	2) if no suitable space found, return NULL
+	//	 Else,
+	//	3) Call sys_allocateMem to invoke the Kernel for allocation
+	// 	4) Return pointer containing the virtual address of allocated space,
+	//
+
+	//This function should find the space of the required range
+	// ******** ON 4KB BOUNDARY ******************* //
+*/
+
+	if(size >USER_HEAP_MAX-USER_HEAP_START ){
+		return NULL;
+	}
+
+	size = ROUNDUP(size , PAGE_SIZE) ;
+	int num_pages = size / PAGE_SIZE ;
+	int counter=0;
+	int n =0;
+	bool update=0;
+	bool update2=0;
+	int indxFI=0;
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	uint32 f_addr=0;
+	int min=USER_HEAP_MAX-USER_HEAP_START;
+	uint32 start_VA_bestfit;
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Make array contains VA adds ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+	for(uint32 i=USER_HEAP_START;i<USER_HEAP_MAX;i+=PAGE_SIZE){
+
+		adds[indxFI]=i;
+
+		indxFI++;
+
+	}		//main for loop (frame info)
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ loop in the heap to get best fit ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	int length = (USER_HEAP_MAX - USER_HEAP_START) / PAGE_SIZE;
+
+	for(uint32 w=0;w<length;w++){
+
+		if(filled_spaces[w]==0)	{
+			if(counter==0){
+
+				f_addr=adds[w];
+			}
+
+			counter++;
+			update=1;
+
+		}
+
+
+		else if (filled_spaces[w]==1){
+
+			if(counter>0){
+
+				if (counter >= num_pages && counter < min) {
+					min = counter;
+
+					start_VA_bestfit =f_addr;
+					update2=1;
+
+				}
+
+
+			}
+			counter=0;
+		}
+
+
+
+/*	fff++; //~~~~~~~~~~~~~  counter bashof el loop wslt ll2akher walla la2*/
+	}
+
+	if (counter >= num_pages && counter < min) {
+				start_VA_bestfit = f_addr;
+
+				update2=1;
+			}
+
+
+	 if(update2==0){  // if there is not suitable place ................
+			return NULL;
+		}
+
+
+	 if(update==0){ // if there is no free spaces in heap .............
+	return NULL;
+	}
+// ~~~~~~~~~~~~~~~~~~~~~~~~ stor VA add & the size for free() .........
+
+	 stor[sa].adds=start_VA_bestfit;
+	 stor[sa].size=size;
+	 sa++;
+
+//  Call sys_allocateMem to invoke the Kernel for allocation   @@!!!!@@!@!@!@!!@!@!@
+
+		sys_allocateMem (start_VA_bestfit,  num_pages);
+
+	/*//Use sys_isUHeapPlacementStrategyBESTFIT() to check the current strategy
+
+	//change this "return" according to your answer
+*/
+
+// ~~~~~~~~~~~~~~~~ update filled_spaces to 1 in filled addresses  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+		int length_adds = sizeof(adds)/sizeof(adds[0]);
+		int filled_indx=0;
+
+		for(int i=0;i<length_adds;i++){
+			if(start_VA_bestfit==adds[i]){
+				filled_indx=i;
+			}
+		}
+
+		for(int j=0;j<num_pages;j++){
+			filled_spaces[filled_indx]=1;
+			filled_indx++;
+
+		}
+
+
+
+		cprintf("############### malloc %x \n",num_pages );
+
+		return (void *)start_VA_bestfit;
+}
